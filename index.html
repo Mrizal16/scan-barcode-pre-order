@@ -1,77 +1,39 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="id">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>PO Kaos — Scan Order</title>
+  <title>Scan Order | PO Kaos</title>
   <link rel="stylesheet" href="./style.css" />
-  <!-- html5-qrcode -->
   <script src="https://unpkg.com/html5-qrcode"></script>
 </head>
 <body>
-  <div class="page">
-    <header class="topbar">
-      <div class="brand">
-        <span class="logo">🧾</span>
-        <div class="titles">
-          <h1>Scan Pengambilan</h1>
-          <p class="muted">Verifikasi QR → blokir scan ganda secara otomatis</p>
-        </div>
-      </div>
-      <div class="right">
-        <a class="link" href="./print.html" title="Cetak QR dari tokens.json">Cetak QR</a>
-      </div>
+  <main class="container">
+    <header class="header">
+      <h1>📦 Scan Pengambilan Order</h1>
+      <p class="muted">Scan QR berisi token. Server memverifikasi & mencegah scan ganda (global).</p>
     </header>
 
-    <section class="panel">
-      <div class="controls">
-        <div class="row">
-          <label for="cameraSelect">Kamera</label>
-          <select id="cameraSelect"></select>
-        </div>
-        <div class="row two">
-          <button id="startBtn" class="btn primary">Mulai Scan</button>
-          <button id="stopBtn" class="btn" disabled>Berhenti</button>
-          <button id="flipBtn" class="btn">Flip</button>
-          <button id="retryBtn" class="btn" disabled>Scan Lagi</button>
-        </div>
-        <div class="row">
-          <label for="resolution">Resolusi</label>
-          <select id="resolution">
-            <option value="auto">Auto (disarankan)</option>
-            <option value="640x480">640 × 480</option>
-            <option value="1280x720">1280 × 720</option>
-            <option value="1920x1080">1920 × 1080</option>
-          </select>
-        </div>
+    <section class="controls">
+      <div class="device-row">
+        <label for="cameraSelect">Pilih Kamera</label>
+        <select id="cameraSelect"></select>
       </div>
-
-      <div id="status" class="status">
-        <span id="statusDot" class="dot"></span>
-        <span id="statusText">Siap</span>
-      </div>
-
-      <div id="readerWrap" class="reader-wrap">
-        <div id="reader"></div>
+      <div class="btn-row">
+        <button id="startBtn" class="btn primary">Mulai Scan</button>
+        <button id="stopBtn" class="btn" disabled>Berhenti</button>
+        <button id="flipBtn" class="btn">Flip Kamera</button>
       </div>
     </section>
 
-    <section id="result" class="panel hidden"></section>
-
-    <section class="panel">
-      <div class="panel-title">Riwayat Hasil (sesi ini)</div>
-      <div id="history" class="history"></div>
-    </section>
+    <section class="scanner"><div id="reader"></div></section>
+    <section id="result" class="result"></section>
 
     <footer class="footer">
-      <div class="muted">Tips: akses via HTTPS (GitHub Pages), izinkan kamera, pilih kamera belakang → <b>Mulai Scan</b>.</div>
+      <p class="muted">Butuh cetak QR dari <code>tokens.json</code>? Buka <a href="./print.html">print.html</a>.</p>
     </footer>
-  </div>
+  </main>
 
-  <audio id="beep" preload="auto">
-    <!-- nada beep kecil (base64 wav) -->
-    <source src="data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABYAAAClAAAAPwAA" type="audio/wav">
-  </audio>
   <script src="./app.js"></script>
 </body>
 </html>
