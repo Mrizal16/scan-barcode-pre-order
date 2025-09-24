@@ -1,21 +1,17 @@
 <!DOCTYPE html>
 <html lang="id">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Scan Order | PO Kaos</title>
   <link rel="stylesheet" href="./style.css" />
-  <!-- Html5Qrcode (kamera scanner) -->
   <script src="https://unpkg.com/html5-qrcode"></script>
 </head>
 <body>
   <main class="container">
     <header class="header">
       <h1>📦 Scan Pengambilan Order</h1>
-      <p class="muted">
-        Arahkan kamera ke QR/Barcode order. Scan pertama akan menandai order sebagai
-        <b>diambil</b> di perangkat ini.
-      </p>
+      <p class="muted">Scan QR berisi token. Server memverifikasi & mencegah scan ganda (global).</p>
     </header>
 
     <section class="controls">
@@ -26,23 +22,15 @@
       <div class="btn-row">
         <button id="startBtn" class="btn primary">Mulai Scan</button>
         <button id="stopBtn" class="btn" disabled>Berhenti</button>
-        <button id="resetBtn" class="btn danger outline" title="Hanya membersihkan status di perangkat ini">
-          Reset Status
-        </button>
+        <button id="flipBtn" class="btn">Flip Kamera</button>
       </div>
     </section>
 
-    <section class="scanner">
-      <div id="reader"></div>
-    </section>
-
+    <section class="scanner"><div id="reader"></div></section>
     <section id="result" class="result"></section>
 
     <footer class="footer">
-      <p class="muted">
-        ℹ️ Data order bersumber dari <code>orders.json</code>. Status “sudah diambil”
-        hanya tersimpan di <code>localStorage</code> perangkat ini.
-      </p>
+      <p class="muted">Butuh cetak QR dari <code>tokens.json</code>? Buka <a href="./print.html">print.html</a>.</p>
     </footer>
   </main>
 

@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Cetak QR Token</title>
+  <link rel="stylesheet" href="./style.css">
+  <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+</head>
+<body>
+  <main class="container">
+    <div class="header">
+      <h1>Cetak QR Token</h1>
+      <p class="muted">Upload <code>tokens.json</code> (hasil generator), lalu cetak.</p>
+      <input type="file" id="file" accept=".json">
+    </div>
+    <div id="grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px;margin-top:16px"></div>
+  </main>
+  <script>
+    const fileInput = document.getElementById('file');
+    const grid = document.getElementById('grid');
+    fileInput.addEventListener('change', async (e)=>{
+      grid.innerHTML = "";
+      const file = e.target.files[0];
+      if (!file) return;
+      const arr = JSON.parse(await file.text());
+      for (const {id, token} of arr) {
+        const card = document.createElement('div');
+        card.className = 'card';
+        const canvas = document.createElement('canvas');
+        await QRCode.toCanvas(canvas, JSON.stringify({t: token}), { width: 200, margin: 1 });
+        const p = document.createElement('p'); p.innerHTML = `<b>${id}</b>`;
+        card.appendChild(canvas); card.appendChild(p);
+        grid.appendChild(card);
+      }
+      window.print();
+    });
+  </script>
+</body>
+</html>
