@@ -1,0 +1,18 @@
+[
+  {
+    "id": "ORDER001",
+    "nama": "Rizal",
+    "jumlah": 2,
+    "ukuran": "L",
+    "telepon": "08123456789",
+    "alamat": "Jl. Merdeka No. 10, Bandung"
+  },
+  {
+    "id": "ORDER002",
+    "nama": "Andi Putra",
+    "jumlah": 1,
+    "ukuran": "M",
+    "telepon": "08198765432",
+    "alamat": "Jl. Sudirman No. 5, Jakarta"
+  }
+]
