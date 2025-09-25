@@ -55,14 +55,3 @@ body{margin:0;font-family:ui-sans-serif,system-ui,Segoe UI,Roboto,Arial;backgrou
 .fallback-row{display:flex;gap:8px;margin-top:10px}
 @media (max-width:640px){.fallback-row{flex-direction:column}}
 a{color:#a5b4fc}
-
-.table-wrap{overflow:auto;max-height:420px;border:1px solid var(--border);border-radius:10px}
-.table{width:100%;border-collapse:separate;border-spacing:0}
-.table thead th{position:sticky;top:0;background:#0f131a;color:var(--muted);text-align:left;padding:10px;font-weight:600;border-bottom:1px solid var(--border)}
-.table tbody td{padding:10px;border-bottom:1px dashed #202633}
-.table tbody tr.done td{background:rgba(34,197,94,.06)}
-.status-dot{display:inline-flex;align-items:center;gap:6px}
-.dot{width:10px;height:10px;border-radius:50%}
-.dot.gray{background:#4b5563}
-.dot.green{background:#22c55e}
-.kbd{font:600 .85rem ui-sans-serif;background:#0e1218;border:1px solid #2b3040;border-radius:6px;padding:2px 6px}
