@@ -76,7 +76,40 @@
       </div>
     </section>
 
+    <!-- ====== Panel Daftar Order (baru) ====== -->
+    <section class="result-controls header">
+      <div class="device-row" style="margin-top:6px;gap:10px;align-items:center">
+        <label for="ordersFile">📥 Muat daftar order (tokens.json / orders.json)</label>
+        <input type="file" id="ordersFile" accept=".json" />
+        <button id="clearChecked" class="btn">Reset Centang</button>
+      </div>
+    </section>
+
     <section id="result" class="result"></section>
+
+    <section class="orders card" id="ordersPanel" style="display:none">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+        <h2 style="margin:0">Daftar Order</h2>
+        <div class="muted" id="ordersStats">0/0 selesai • Sisa 0</div>
+      </div>
+      <div class="hr"></div>
+      <div class="table-wrap">
+        <table id="ordersTable" class="table">
+          <thead>
+            <tr>
+              <th>Status</th>
+              <th>ID</th>
+              <th>Nama</th>
+              <th>Jumlah</th>
+              <th>Ukuran</th>
+              <th>Telepon</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+    <!-- ====== /Panel Daftar Order ====== -->
 
     <footer class="footer">
       <p class="muted">© PO Kaos • Privasi terjaga — tidak menyimpan gambar kamera.</p>

@@ -17,6 +17,21 @@ const vibeToggle = document.getElementById("vibeToggle");
 const manualInput = document.getElementById("manualInput");
 const manualBtn   = document.getElementById("manualBtn");
 
+/* ====== elemen untuk daftar order (panel tabel) ====== */
+const ordersFile = document.getElementById("ordersFile");
+const ordersPanel = document.getElementById("ordersPanel");
+const ordersTableBody = document.querySelector("#ordersTable tbody");
+const ordersStats = document.getElementById("ordersStats");
+const clearCheckedBtn = document.getElementById("clearChecked");
+
+/* ====== state daftar order ====== */
+let orders = [];                 // [{id,nama,jumlah,ukuran,telepon,token?}]
+let orderById = new Map();       // id -> order
+let idByToken = new Map();       // token -> id (untuk file tokens.json)
+let checked = new Set();         // id yang sudah ditandai selesai
+const LS_KEY = "po-scan-checked-v1";
+
+/* ====== util umum ====== */
 function esc(s){return String(s??"").replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]))}
 
 function setLive(state, text){
@@ -26,6 +41,7 @@ function setLive(state, text){
   livePill.style.color = state ? "#b9f6c5" : "var(--muted)";
 }
 
+/* ====== render kartu hasil scan ====== */
 function renderOrder(order, first) {
   resultEl.innerHTML = `
     <div class="card">
@@ -57,6 +73,7 @@ function renderError(msg){
   `;
 }
 
+/* ====== kamera ====== */
 async function enumerateCameras() {
   try{
     cameras = await Html5Qrcode.getCameras();
@@ -97,7 +114,6 @@ async function startScan() {
     await html5QrCode.start(deviceId, { fps: 12, qrbox }, onScanSuccess, ()=>{});
     isRunning = true; startBtn.disabled=true; stopBtn.disabled=false; torchBtn.disabled=false;
     setLive(true);
-    // coba aktifkan torch info
     await updateTorchButtonState();
   } catch (e) {
     renderError("Tidak bisa akses kamera. Pastikan HTTPS & izinkan kamera.");
@@ -137,17 +153,64 @@ async function toggleTorch(){
     await html5QrCode.applyVideoConstraints?.({ advanced:[{ torch: torchOn }] });
     await updateTorchButtonState();
   }catch{
-    // beberapa device tidak support
-    torchBtn.disabled = true;
+    torchBtn.disabled = true; // device tidak support
   }
 }
 
+/* ====== parsing token ====== */
 function parseTokenLike(s){
   let token = String(s||"").trim();
   try { const obj = JSON.parse(token); if (obj && obj.t) token = obj.t; } catch {}
   return token;
 }
 
+/* ====== daftar order: render & centang ====== */
+function normalizeArr(arr){
+  // dukung format tokens.json (id, token) atau orders.json (id, nama, dst)
+  return arr.map(x=>({
+    id: x.id ?? x.ID ?? "",
+    nama: x.nama ?? x.name ?? "",
+    jumlah: x.jumlah ?? x.qty ?? "",
+    ukuran: x.ukuran ?? x.size ?? "",
+    telepon: x.telepon ?? x.phone ?? "",
+    token: x.token
+  })).filter(x=>x.id);
+}
+
+// pulihkan centang dari localStorage
+try { (JSON.parse(localStorage.getItem(LS_KEY)||"[]")||[]).forEach(v=>checked.add(String(v))); } catch {}
+
+function renderOrders(){
+  if (!orders.length){ ordersPanel.style.display="none"; return; }
+  ordersPanel.style.display="block";
+  ordersTableBody.innerHTML = "";
+  let done = 0;
+  for (const o of orders){
+    const isDone = checked.has(String(o.id));
+    if (isDone) done++;
+    const tr = document.createElement("tr");
+    if (isDone) tr.classList.add("done");
+    tr.innerHTML = `
+      <td><span class="status-dot"><span class="dot ${isDone?'green':'gray'}"></span>${isDone?'Selesai':'Belum'}</span></td>
+      <td><span class="kbd">${esc(o.id)}</span></td>
+      <td>${esc(o.nama||'-')}</td>
+      <td>${esc(o.jumlah||'-')}</td>
+      <td>${esc(o.ukuran||'-')}</td>
+      <td>${esc(o.telepon||'-')}</td>
+    `;
+    ordersTableBody.appendChild(tr);
+  }
+  ordersStats.textContent = `${done}/${orders.length} selesai • Sisa ${orders.length - done}`;
+}
+
+function markChecked(id){
+  if (!id) return;
+  checked.add(String(id));
+  try{ localStorage.setItem(LS_KEY, JSON.stringify([...checked])); }catch{}
+  renderOrders();
+}
+
+/* ====== verifikasi token ke server ====== */
 async function verifyToken(token){
   try {
     const res = await fetch(WORKER_URL, {
@@ -156,8 +219,17 @@ async function verifyToken(token){
       body: JSON.stringify({ token })
     });
     const data = await res.json();
-    if (data.status === "PICKED_OK")            renderOrder(data.order || {}, true);
-    else if (data.status === "ALREADY_PICKED")  renderOrder(data.order || {}, false);
+
+    if (data.status === "PICKED_OK") {
+      renderOrder(data.order || {}, true);
+      const id = (data.order && data.order.id) || idByToken.get(String(token)) || "";
+      markChecked(id);
+    }
+    else if (data.status === "ALREADY_PICKED") {
+      renderOrder(data.order || {}, false);
+      const id = (data.order && data.order.id) || idByToken.get(String(token)) || "";
+      markChecked(id);
+    }
     else if (data.error === "INVALID_SIGNATURE") renderError("Token tidak valid.");
     else if (data.error === "TOKEN_EXPIRED")     renderError("Token kedaluwarsa.");
     else if (data.error)                         renderError(data.error);
@@ -167,14 +239,16 @@ async function verifyToken(token){
   }
 }
 
+/* ====== event scan ====== */
 async function onScanSuccess(decodedText) {
   const token = parseTokenLike(decodedText);
-  if (beepToggle.checked) { try{ beepEl.currentTime=0; beepEl.play(); }catch{} }
-  if (vibeToggle.checked && "vibrate" in navigator) { navigator.vibrate?.(60); }
+  if (beepToggle && beepToggle.checked) { try{ beepEl.currentTime=0; beepEl.play(); }catch{} }
+  if (vibeToggle && vibeToggle.checked && "vibrate" in navigator) { navigator.vibrate?.(60); }
   await stopScan();
   await verifyToken(token);
 }
 
+/* ====== listeners UI ====== */
 startBtn.addEventListener("click", startScan);
 stopBtn.addEventListener("click", stopScan);
 flipBtn.addEventListener("click", flipCamera);
@@ -188,4 +262,32 @@ manualBtn.addEventListener("click", async ()=>{
   await verifyToken(token);
 });
 
-(async function init(){ await enumerateCameras(); setLive(false); })();
+/* ====== loader daftar order + reset centang ====== */
+if (ordersFile){
+  ordersFile.addEventListener("change", async (e)=>{
+    const f = e.target.files?.[0];
+    if (!f) return;
+    try{
+      const arr = JSON.parse(await f.text());
+      orders = normalizeArr(Array.isArray(arr)?arr:[]);
+      orderById.clear(); idByToken.clear();
+      for (const o of orders){
+        orderById.set(String(o.id), o);
+        if (o.token) idByToken.set(String(o.token), String(o.id));
+      }
+      renderOrders();
+    }catch{
+      renderError("Gagal membaca daftar order (.json).");
+    }
+  });
+}
+if (clearCheckedBtn){
+  clearCheckedBtn.addEventListener("click", ()=>{
+    if (!confirm("Hapus semua tanda centang lokal?")) return;
+    checked.clear(); try{ localStorage.removeItem(LS_KEY); }catch{}
+    renderOrders();
+  });
+}
+
+/* ====== init ====== */
+(async function init(){ await enumerateCameras(); setLive(false); renderOrders(); })();
