@@ -1,20 +1,35 @@
-const WORKER_URL = "https://po-scan-worker.rizal-scan.workers.dev/scan"; // GANTI jika beda
+const WORKER_URL = "https://po-scan-worker.rizal-scan.workers.dev/scan"; // ganti jika beda
 
-let html5QrCode = null, isRunning = false;
+let html5QrCode = null, isRunning = false, torchOn = false;
 let cameras = [], currentCamIndex = 0;
 
 const resultEl = document.getElementById("result");
 const cameraSelect = document.getElementById("cameraSelect");
+const resSelect    = document.getElementById("resSelect");
 const startBtn = document.getElementById("startBtn");
 const stopBtn  = document.getElementById("stopBtn");
 const flipBtn  = document.getElementById("flipBtn");
+const torchBtn = document.getElementById("torchBtn");
+const livePill = document.getElementById("livePill");
+const beepEl   = document.getElementById("beep");
+const beepToggle = document.getElementById("beepToggle");
+const vibeToggle = document.getElementById("vibeToggle");
+const manualInput = document.getElementById("manualInput");
+const manualBtn   = document.getElementById("manualBtn");
 
 function esc(s){return String(s??"").replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]))}
+
+function setLive(state, text){
+  livePill.textContent = text || (state ? "Scanning…" : "Idle");
+  livePill.style.background = state ? "rgba(22,163,74,.12)" : "#0e1218";
+  livePill.style.borderColor = state ? "rgba(22,163,74,.35)" : "var(--ring)";
+  livePill.style.color = state ? "#b9f6c5" : "var(--muted)";
+}
 
 function renderOrder(order, first) {
   resultEl.innerHTML = `
     <div class="card">
-      <div style="display:flex;justify-content:space-between;align-items:center">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
         <h2 style="margin:0">ID: ${esc(order.id)}</h2>
         <span class="badge ${first?'':'warn'}">${first?'✔️ Terscan & diambil':'⚠️ Sudah diambil'}</span>
       </div>
@@ -43,7 +58,11 @@ function renderError(msg){
 }
 
 async function enumerateCameras() {
-  cameras = await Html5Qrcode.getCameras();
+  try{
+    cameras = await Html5Qrcode.getCameras();
+  }catch{
+    cameras = [];
+  }
   cameraSelect.innerHTML = "";
   if (cameras?.length) {
     cameras.forEach((d,i)=>{
@@ -59,21 +78,37 @@ async function enumerateCameras() {
   }
 }
 
+function currentDeviceId(){
+  return cameraSelect.value || (cameras[currentCamIndex]?.id) || { facingMode: "environment" };
+}
+
 async function startScan() {
   if (isRunning) return;
+  if (location.protocol !== "https:" && location.hostname !== "localhost") {
+    renderError("Akses kamera butuh HTTPS. Buka melalui https://… atau localhost.");
+    return;
+  }
   if (!html5QrCode) html5QrCode = new Html5Qrcode("reader");
-  const deviceId = cameraSelect.value || (cameras[currentCamIndex]?.id) || { facingMode: "environment" };
+
+  const qrbox = parseInt(resSelect.value || "420", 10);
+  const deviceId = currentDeviceId();
+
   try {
-    await html5QrCode.start(deviceId, { fps: 12, qrbox: 280 }, onScanSuccess, ()=>{});
-    isRunning = true; startBtn.disabled=true; stopBtn.disabled=false;
-  } catch {
+    await html5QrCode.start(deviceId, { fps: 12, qrbox }, onScanSuccess, ()=>{});
+    isRunning = true; startBtn.disabled=true; stopBtn.disabled=false; torchBtn.disabled=false;
+    setLive(true);
+    // coba aktifkan torch info
+    await updateTorchButtonState();
+  } catch (e) {
     renderError("Tidak bisa akses kamera. Pastikan HTTPS & izinkan kamera.");
+    setLive(false, "Idle");
   }
 }
 async function stopScan() {
-  if (!html5QrCode || !isRunning) return;
-  await html5QrCode.stop(); await html5QrCode.clear();
-  isRunning = false; startBtn.disabled=false; stopBtn.disabled=true;
+  if (!html5QrCode || !isRunning) { setLive(false); return; }
+  try{ await html5QrCode.stop(); await html5QrCode.clear(); }catch{}
+  isRunning = false; startBtn.disabled=false; stopBtn.disabled=true; torchBtn.disabled=true; torchOn=false;
+  setLive(false);
 }
 async function flipCamera() {
   if (!cameras || cameras.length < 2) return;
@@ -82,11 +117,38 @@ async function flipCamera() {
   if (isRunning) { await stopScan(); await startScan(); }
 }
 
-async function onScanSuccess(decodedText) {
-  let token = String(decodedText).trim();
-  try { const obj = JSON.parse(token); if (obj && obj.t) token = obj.t; } catch {}
-  await stopScan();
+async function updateTorchButtonState(){
+  try{
+    const caps = await html5QrCode.getRunningTrackCapabilities?.();
+    if (caps && caps.torch) {
+      torchBtn.disabled = false;
+      torchBtn.textContent = torchOn ? "💡 Matikan Flash" : "💡 Nyalakan Flash";
+    } else {
+      torchBtn.disabled = true;
+    }
+  }catch{
+    torchBtn.disabled = true;
+  }
+}
+async function toggleTorch(){
+  if (!isRunning) return;
+  try{
+    torchOn = !torchOn;
+    await html5QrCode.applyVideoConstraints?.({ advanced:[{ torch: torchOn }] });
+    await updateTorchButtonState();
+  }catch{
+    // beberapa device tidak support
+    torchBtn.disabled = true;
+  }
+}
 
+function parseTokenLike(s){
+  let token = String(s||"").trim();
+  try { const obj = JSON.parse(token); if (obj && obj.t) token = obj.t; } catch {}
+  return token;
+}
+
+async function verifyToken(token){
   try {
     const res = await fetch(WORKER_URL, {
       method: "POST",
@@ -105,7 +167,25 @@ async function onScanSuccess(decodedText) {
   }
 }
 
+async function onScanSuccess(decodedText) {
+  const token = parseTokenLike(decodedText);
+  if (beepToggle.checked) { try{ beepEl.currentTime=0; beepEl.play(); }catch{} }
+  if (vibeToggle.checked && "vibrate" in navigator) { navigator.vibrate?.(60); }
+  await stopScan();
+  await verifyToken(token);
+}
+
 startBtn.addEventListener("click", startScan);
 stopBtn.addEventListener("click", stopScan);
 flipBtn.addEventListener("click", flipCamera);
-(async function init(){ await enumerateCameras(); })();
+torchBtn.addEventListener("click", toggleTorch);
+cameraSelect.addEventListener("change", async ()=>{ if (isRunning){ await stopScan(); await startScan(); } });
+resSelect.addEventListener("change", async ()=>{ if (isRunning){ await stopScan(); await startScan(); } });
+
+manualBtn.addEventListener("click", async ()=>{
+  const token = parseTokenLike(manualInput.value);
+  if (!token) return renderError("Masukkan token terlebih dahulu.");
+  await verifyToken(token);
+});
+
+(async function init(){ await enumerateCameras(); setLive(false); })();

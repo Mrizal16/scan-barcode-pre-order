@@ -10,29 +10,82 @@
 <body>
   <main class="container">
     <header class="header">
-      <h1>📦 Scan Pengambilan Order</h1>
-      <p class="muted">Scan QR berisi token. Server memverifikasi & mencegah scan ganda (global).</p>
+      <div class="hdr-top">
+        <h1>📦 Scan Pengambilan Order</h1>
+        <span class="pill live" id="livePill">Idle</span>
+      </div>
+      <p class="muted">
+        Scan QR berisi token. Server memverifikasi & mencegah scan ganda (global).
+      </p>
+      <div class="tips">
+        <span>✅ Tip: pakai koneksi <b>HTTPS</b> dan izinkan kamera.</span>
+        <a class="link" href="./print.html">Butuh cetak QR dari <code>tokens.json</code>?</a>
+      </div>
     </header>
 
     <section class="controls">
-      <div class="device-row">
-        <label for="cameraSelect">Pilih Kamera</label>
-        <select id="cameraSelect"></select>
+      <div class="control-grid">
+        <label class="lbl" for="cameraSelect">Kamera</label>
+        <select id="cameraSelect" class="input"></select>
+
+        <label class="lbl">Resolusi</label>
+        <select id="resSelect" class="input">
+          <option value="280">280 (cepat)</option>
+          <option value="360">360</option>
+          <option value="420" selected>420 (disarankan)</option>
+          <option value="520">520 (detail)</option>
+        </select>
+
+        <label class="lbl">Mode</label>
+        <div class="toggle-row">
+          <label class="switch">
+            <input id="beepToggle" type="checkbox" checked>
+            <span class="slider"></span>
+          </label>
+          <span class="muted small">Bunyi saat berhasil</span>
+          <label class="switch" style="margin-left:12px">
+            <input id="vibeToggle" type="checkbox" checked>
+            <span class="slider"></span>
+          </label>
+          <span class="muted small">Getar saat berhasil</span>
+        </div>
       </div>
+
       <div class="btn-row">
-        <button id="startBtn" class="btn primary">Mulai Scan</button>
-        <button id="stopBtn" class="btn" disabled>Berhenti</button>
-        <button id="flipBtn" class="btn">Flip Kamera</button>
+        <button id="startBtn" class="btn primary">▶ Mulai Scan</button>
+        <button id="stopBtn" class="btn" disabled>⏹ Berhenti</button>
+        <button id="flipBtn" class="btn">🔄 Flip Kamera</button>
+        <button id="torchBtn" class="btn" disabled>💡 Nyalakan Flash</button>
+      </div>
+
+      <details class="fallback">
+        <summary>⚙️ Alternatif tanpa kamera (tempel token manual)</summary>
+        <div class="fallback-row">
+          <input id="manualInput" class="input" placeholder='Tempel token atau JSON {"t":"..."}'>
+          <button id="manualBtn" class="btn">Verifikasi</button>
+        </div>
+      </details>
+    </section>
+
+    <section class="scanner">
+      <div id="reader" class="reader">
+        <div class="skeleton">
+          <div class="spin"></div>
+          <div>Siapkan kamera…</div>
+        </div>
       </div>
     </section>
 
-    <section class="scanner"><div id="reader"></div></section>
     <section id="result" class="result"></section>
 
     <footer class="footer">
-      <p class="muted">Butuh cetak QR dari <code>tokens.json</code>? Buka <a href="./print.html">print.html</a>.</p>
+      <p class="muted">© PO Kaos • Privasi terjaga — tidak menyimpan gambar kamera.</p>
     </footer>
   </main>
+
+  <audio id="beep" preload="auto">
+    <source src="data:audio/wav;base64,UklGRhQAAABXQVZFZm10IBAAAAABAAEAgD4AAIA+AAABAAgAZGF0YQAAAAAAAP//AAD//wAA" type="audio/wav">
+  </audio>
 
   <script src="./app.js"></script>
 </body>

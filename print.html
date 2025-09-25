@@ -3,38 +3,158 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Cetak QR Token</title>
+  <title>Cetak / Unduh QR Token</title>
   <link rel="stylesheet" href="./style.css">
   <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js"></script>
 </head>
 <body>
   <main class="container">
     <div class="header">
-      <h1>Cetak QR Token</h1>
-      <p class="muted">Upload <code>tokens.json</code> (hasil generator), lalu cetak.</p>
-      <input type="file" id="file" accept=".json">
+      <h1>🖨️ Export QR Token → PNG/JPG</h1>
+      <p class="muted">Upload <code>tokens.json</code> (hasil generator), lalu unduh PNG/JPG per item atau sekaligus ZIP.</p>
+      <div class="control-grid" style="margin-top:8px">
+        <label class="lbl" for="file">File</label>
+        <input type="file" id="file" class="input" accept=".json">
+
+        <label class="lbl" for="fmt">Format</label>
+        <select id="fmt" class="input">
+          <option value="png" selected>PNG (tajam)</option>
+          <option value="jpeg">JPG (kecil)</option>
+        </select>
+
+        <label class="lbl" for="size">Ukuran</label>
+        <select id="size" class="input">
+          <option value="512">512 px</option>
+          <option value="640" selected>640 px</option>
+          <option value="800">800 px</option>
+          <option value="1024">1024 px</option>
+        </select>
+      </div>
+
+      <div class="btn-row" style="margin-top:10px">
+        <button id="zipBtn" class="btn" disabled>📦 Download semua (ZIP)</button>
+        <button id="printBtn" class="btn" disabled>🖨️ Cetak lembar (A4)</button>
+      </div>
+      <div id="progress" class="muted small" style="margin-top:8px"></div>
     </div>
+
     <div id="grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px;margin-top:16px"></div>
   </main>
+
   <script>
     const fileInput = document.getElementById('file');
     const grid = document.getElementById('grid');
-    fileInput.addEventListener('change', async (e)=>{
+    const fmtSel = document.getElementById('fmt');
+    const sizeSel = document.getElementById('size');
+    const zipBtn = document.getElementById('zipBtn');
+    const printBtn = document.getElementById('printBtn');
+    const progress = document.getElementById('progress');
+
+    let records = []; // {id, token}
+    let canvases = []; // {id, canvas}
+
+    function cardTemplate(id, dataUrl){
+      const wrap = document.createElement('div');
+      wrap.className = 'card';
+      wrap.style.textAlign = 'center';
+      const img = document.createElement('img');
+      img.src = dataUrl; img.alt = id; img.style.width = '100%'; img.style.borderRadius='10px';
+      const p = document.createElement('p'); p.innerHTML = `<b>${id}</b>`;
+      const row = document.createElement('div'); row.className='btn-row'; row.style.justifyContent='center';
+      const a = document.createElement('a'); a.className='btn'; a.textContent='⬇️ Unduh';
+      a.download = `${id}.${fmtSel.value==='jpeg'?'jpg':'png'}`;
+      a.href = dataUrl;
+      row.appendChild(a);
+      wrap.appendChild(img); wrap.appendChild(p); wrap.appendChild(row);
+      return wrap;
+    }
+
+    async function buildCanvases(){
+      canvases = [];
       grid.innerHTML = "";
+      progress.textContent = "";
+      const size = parseInt(sizeSel.value,10) || 640;
+      const fmt = fmtSel.value;
+      let i = 0;
+      for (const {id, token} of records) {
+        i++;
+        progress.textContent = `Membuat QR ${i}/${records.length}…`;
+        const canvas = document.createElement('canvas');
+        await QRCode.toCanvas(canvas, JSON.stringify({t: token}), { width: size, margin: 1 });
+        canvases.push({ id, canvas });
+
+        const dataUrl = canvas.toDataURL(fmt === 'jpeg' ? 'image/jpeg' : 'image/png', fmt==='jpeg'?0.92:1);
+        grid.appendChild(cardTemplate(id, dataUrl));
+        await new Promise(r=>setTimeout(r,0)); // beri napas UI
+      }
+      progress.textContent = `Selesai membuat ${records.length} gambar.`;
+      zipBtn.disabled = records.length===0;
+      printBtn.disabled = records.length===0;
+    }
+
+    fileInput.addEventListener('change', async (e)=>{
+      grid.innerHTML = ""; canvases=[]; records=[];
+      zipBtn.disabled = true; printBtn.disabled = true; progress.textContent = "";
       const file = e.target.files[0];
       if (!file) return;
-      const arr = JSON.parse(await file.text());
-      for (const {id, token} of arr) {
+      try{
+        const arr = JSON.parse(await file.text());
+        if (!Array.isArray(arr)) throw new Error('Format tidak sesuai. Harus array objek {id, token}.');
+        records = arr.map(x=>({ id: x.id ?? '', token: x.token ?? '' })).filter(x=>x.id && x.token);
+        if (!records.length) throw new Error('Tidak ada item valid di file.');
+        await buildCanvases();
+      }catch(err){
         const card = document.createElement('div');
-        card.className = 'card';
-        const canvas = document.createElement('canvas');
-        await QRCode.toCanvas(canvas, JSON.stringify({t: token}), { width: 200, margin: 1 });
-        const p = document.createElement('p'); p.innerHTML = `<b>${id}</b>`;
-        card.appendChild(canvas); card.appendChild(p);
+        card.className='card'; card.innerHTML = `<div class="alert err">❌ ${err.message||'Gagal membaca file.'}</div>`;
         grid.appendChild(card);
       }
+    });
+
+    fmtSel.addEventListener('change', buildCanvases);
+    sizeSel.addEventListener('change', buildCanvases);
+
+    zipBtn.addEventListener('click', async ()=>{
+      if (!canvases.length) return;
+      zipBtn.disabled = true;
+      const zip = new JSZip();
+      const fmt = fmtSel.value;
+      const mime = fmt==='jpeg' ? 'image/jpeg' : 'image/png';
+      const ext = fmt==='jpeg' ? 'jpg' : 'png';
+      let i = 0;
+      for (const {id, canvas} of canvases){
+        i++;
+        progress.textContent = `Mengemas ZIP ${i}/${canvases.length}…`;
+        const dataUrl = canvas.toDataURL(mime, fmt==='jpeg'?0.92:1);
+        const base64 = dataUrl.split(',')[1];
+        zip.file(`${id}.${ext}`, base64, {base64:true});
+        await new Promise(r=>setTimeout(r,0));
+      }
+      const blob = await zip.generateAsync({type:'blob'});
+      saveAs(blob, `qr-tokens-${Date.now()}.zip`);
+      progress.textContent = `ZIP siap diunduh.`;
+      zipBtn.disabled = false;
+    });
+
+    // Cetak grid dalam tata letak A4 (CSS print bawaan browser)
+    printBtn.addEventListener('click', ()=>{
+      // untuk hasil tajam, gunakan <img> yang sudah ada
       window.print();
     });
   </script>
+
+  <style>
+    /* Tata letak cetak sederhana: 3 kolom x 4 baris A4, margin kecil */
+    @media print {
+      body{background:white}
+      .container{max-width:none;margin:0;padding:0}
+      .header,.btn-row,.control-grid,#progress{display:none!important}
+      #grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:8px}
+      .card{page-break-inside:avoid;border:1px solid #ccc;background:white}
+      .card img{width:100%}
+      .card p{color:#111}
+    }
+  </style>
 </body>
 </html>
