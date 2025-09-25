@@ -13,7 +13,7 @@
   <main class="container">
     <div class="header">
       <h1>🖨️ Export QR Token → PNG/JPG</h1>
-      <p class="muted">Upload <code>tokens.json</code>, pilih format/ukuran, logo & teks branding otomatis disisipkan.</p>
+      <p class="muted">Upload <code>tokens.json</code>, pilih format/ukuran. Logo otomatis ditambahkan (bawah / tengah).</p>
 
       <div class="control-grid" style="margin-top:8px">
         <label class="lbl" for="file">File</label>
@@ -33,8 +33,14 @@
           <option value="1024">1024 px</option>
         </select>
 
-        <label class="lbl" for="logo">Logo (opsional, override)</label>
+        <label class="lbl" for="logo">Logo (override)</label>
         <input type="file" id="logo" class="input" accept="image/*">
+
+        <label class="lbl" for="logoPos">Posisi logo</label>
+        <select id="logoPos" class="input">
+          <option value="footer" selected>Bawah (footer)</option>
+          <option value="center">Tengah QR (overlay)</option>
+        </select>
 
         <label class="lbl" for="brand">Teks branding</label>
         <input id="brand" class="input" placeholder="mis. GANESIPALA • Official" value="GANESIPALA • Official">
@@ -72,14 +78,15 @@
     const brandInput = document.getElementById('brand');
     const brandSizeSel = document.getElementById('brandSize');
     const logoInput = document.getElementById('logo');
+    const logoPosSel = document.getElementById('logoPos');
     const templateSel = document.getElementById('template');
     const zipBtn = document.getElementById('zipBtn');
     const printBtn = document.getElementById('printBtn');
     const progress = document.getElementById('progress');
 
-    let records = [];    // {id, token}
-    let canvases = [];   // {id, canvas}
-    let logoImg = null;  // HTMLImageElement bila ada
+    let records = [];    
+    let canvases = [];   
+    let logoImg = null;  
 
     const sleep = (ms)=>new Promise(r=>setTimeout(r,ms));
     const loadImageFromFile = (file)=> new Promise((res,rej)=>{
@@ -91,7 +98,7 @@
       img.src = url;
     });
 
-    // === AUTO-LOAD LOGO DEFAULT ===
+    // Auto-load default logo
     const DEFAULT_LOGO_PATH = './logo-ganesipala.png';
     async function tryLoadDefaultLogo(){
       try{
@@ -100,21 +107,9 @@
         const blob = await resp.blob();
         const url = URL.createObjectURL(blob);
         logoImg = await loadImageFromURL(url);
-
-        // Tampilkan ke input (indikasi visual)
-        try{
-          const dt = new DataTransfer();
-          dt.items.add(new File([blob], 'logo-ganesipala.png', { type: blob.type }));
-          logoInput.files = dt.files;
-        }catch{}
-
-        if (records.length) await buildCanvases();
-      }catch{
-        // tidak ada logo default -> abaikan
-      }
+      }catch{}
     }
     document.addEventListener('DOMContentLoaded', tryLoadDefaultLogo);
-    // ==============================
 
     function cardTemplate(id, dataUrl){
       const wrap = document.createElement('div');
@@ -142,37 +137,47 @@
       const footerH = parseInt(brandSizeSel.value,10) || 110;
       const fmt = fmtSel.value;
       const mime = fmt==='jpeg' ? 'image/jpeg' : 'image/png';
+      const logoPos = logoPosSel.value;
 
       let i = 0;
       for (const {id, token} of records) {
         i++;
         progress.textContent = `Membuat QR ${i}/${records.length}…`;
 
-        // QR pada canvas sementara
         const qrCanvas = document.createElement('canvas');
         await QRCode.toCanvas(qrCanvas, JSON.stringify({t: token}), { width: qrSize, margin: 1 });
 
-        // Canvas final (QR + footer)
         const W = qrSize, H = qrSize + footerH;
         const final = document.createElement('canvas'); final.width = W; final.height = H;
         const ctx = final.getContext('2d');
 
-        // background putih
         ctx.fillStyle = '#fff'; ctx.fillRect(0,0,W,H);
-
-        // QR
         ctx.drawImage(qrCanvas, 0, 0);
 
-        // separator
+        // overlay logo di tengah QR
+        if (logoImg && logoPos === 'center'){
+          const maxW = qrSize * 0.2; // max 20% lebar QR
+          const maxH = qrSize * 0.2;
+          const ratio = logoImg.width / logoImg.height;
+          let lw = maxW, lh = maxH;
+          if (ratio > 1) lh = lw/ratio; else lw = lh*ratio;
+          const cx = (qrSize - lw)/2;
+          const cy = (qrSize - lh)/2;
+          ctx.fillStyle = '#fff';
+          ctx.fillRect(cx-4, cy-4, lw+8, lh+8); // padding putih
+          ctx.drawImage(logoImg, cx, cy, lw, lh);
+        }
+
+        // garis pemisah
         ctx.fillStyle = '#e5e7eb';
         ctx.fillRect(Math.round(W*0.08), qrSize, Math.round(W*0.84), 1);
 
-        // footer
+        // footer (logo+teks jika posisi footer)
         const padding = 12;
         const areaY = qrSize + Math.round((footerH-64)/2);
         let x = padding, y = areaY;
 
-        if (logoImg){
+        if (logoImg && logoPos === 'footer'){
           const targetH = Math.min(footerH-24, 64);
           const ratio = logoImg.width / logoImg.height;
           const logoW = Math.round(targetH * ratio);
@@ -184,19 +189,18 @@
         }
 
         ctx.fillStyle = '#111827';
-        ctx.font = '700 20px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial';
+        ctx.font = '700 20px ui-sans-serif, system-ui, Segoe UI, Roboto, Arial';
         ctx.textBaseline = 'top';
         ctx.fillText(String(id), x, y-2);
 
         const brand = brandInput.value?.trim();
         if (brand){
           ctx.fillStyle = '#374151';
-          ctx.font = '500 16px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial';
+          ctx.font = '500 16px ui-sans-serif, system-ui, Segoe UI, Roboto, Arial';
           ctx.fillText(brand, x, y+22);
         }
 
         canvases.push({ id, canvas: final });
-
         const dataUrl = final.toDataURL(mime, fmt==='jpeg'?0.92:1);
         grid.appendChild(cardTemplate(id, dataUrl));
         await sleep(0);
@@ -215,9 +219,7 @@
       if (!file) return;
       try{
         const arr = JSON.parse(await file.text());
-        if (!Array.isArray(arr)) throw new Error('Format tidak sesuai. Harus array objek {id, token}.');
         records = arr.map(x=>({ id: x.id ?? '', token: x.token ?? '' })).filter(x=>x.id && x.token);
-        if (!records.length) throw new Error('Tidak ada item valid di file.');
         await buildCanvases();
       }catch(err){
         const card = document.createElement('div');
@@ -226,7 +228,6 @@
       }
     });
 
-    // override manual logo (opsional)
     logoInput.addEventListener('change', async (e)=>{
       const f = e.target.files?.[0];
       if (!f) return;
@@ -234,44 +235,30 @@
       if (records.length) await buildCanvases();
     });
 
-    [fmtSel, sizeSel, brandInput, brandSizeSel].forEach(el=>{
+    [fmtSel, sizeSel, brandInput, brandSizeSel, logoPosSel].forEach(el=>{
       el.addEventListener('change', ()=> buildCanvases());
       el.addEventListener('keyup',  ()=> buildCanvases());
     });
 
-    // ZIP semua
     zipBtn.addEventListener('click', async ()=>{
-      if (!canvases.length) return;
-      zipBtn.disabled = true;
       const zip = new JSZip();
       const fmt = fmtSel.value;
       const mime = fmt==='jpeg' ? 'image/jpeg' : 'image/png';
       const ext = fmt==='jpeg' ? 'jpg' : 'png';
-      let i = 0;
       for (const {id, canvas} of canvases){
-        i++;
-        progress.textContent = `Mengemas ZIP ${i}/${canvases.length}…`;
         const dataUrl = canvas.toDataURL(mime, fmt==='jpeg'?0.92:1);
         const base64 = dataUrl.split(',')[1];
         zip.file(`${id}.${ext}`, base64, {base64:true});
-        await sleep(0);
       }
       const blob = await zip.generateAsync({type:'blob'});
       saveAs(blob, `qr-tokens-${Date.now()}.zip`);
-      progress.textContent = `ZIP siap diunduh.`;
-      zipBtn.disabled = false;
     });
 
-    // template cetak
     function applyTemplate(){
       const t = templateSel.value;
-      if (t==='a4-3x8'){
-        grid.style.gridTemplateColumns = 'repeat(3, 1fr)';
-      } else if (t==='a4-2x5'){
-        grid.style.gridTemplateColumns = 'repeat(2, 1fr)';
-      } else {
-        grid.style.gridTemplateColumns = 'repeat(auto-fill,minmax(220px,1fr))';
-      }
+      if (t==='a4-3x8'){ grid.style.gridTemplateColumns = 'repeat(3, 1fr)'; }
+      else if (t==='a4-2x5'){ grid.style.gridTemplateColumns = 'repeat(2, 1fr)'; }
+      else { grid.style.gridTemplateColumns = 'repeat(auto-fill,minmax(220px,1fr))'; }
     }
     templateSel.addEventListener('change', applyTemplate);
     applyTemplate();
@@ -280,7 +267,6 @@
   </script>
 
   <style>
-    /* Template cetak */
     @media print {
       body{background:white}
       .container{max-width:none;margin:0;padding:0}
