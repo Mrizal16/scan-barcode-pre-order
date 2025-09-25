@@ -13,7 +13,8 @@
   <main class="container">
     <div class="header">
       <h1>🖨️ Export QR Token → PNG/JPG</h1>
-      <p class="muted">Upload <code>tokens.json</code> (hasil generator), lalu unduh PNG/JPG per item atau sekaligus ZIP.</p>
+      <p class="muted">Upload <code>tokens.json</code>, pilih format/ukuran, opsional tambahkan logo & teks branding di bawah QR.</p>
+
       <div class="control-grid" style="margin-top:8px">
         <label class="lbl" for="file">File</label>
         <input type="file" id="file" class="input" accept=".json">
@@ -24,18 +25,38 @@
           <option value="jpeg">JPG (kecil)</option>
         </select>
 
-        <label class="lbl" for="size">Ukuran</label>
+        <label class="lbl" for="size">Ukuran QR</label>
         <select id="size" class="input">
           <option value="512">512 px</option>
           <option value="640" selected>640 px</option>
           <option value="800">800 px</option>
           <option value="1024">1024 px</option>
         </select>
+
+        <label class="lbl" for="logo">Logo (opsional)</label>
+        <input type="file" id="logo" class="input" accept="image/*">
+
+        <label class="lbl" for="brand">Teks branding</label>
+        <input id="brand" class="input" placeholder="mis. GANESIPALA • Official">
+
+        <label class="lbl" for="brandSize">Tinggi footer</label>
+        <select id="brandSize" class="input">
+          <option value="80">Kecil</option>
+          <option value="110" selected>Sedang</option>
+          <option value="140">Besar</option>
+        </select>
+
+        <label class="lbl" for="template">Template cetak</label>
+        <select id="template" class="input">
+          <option value="auto" selected>Otomatis (grid responsif)</option>
+          <option value="a4-3x8">A4 3×8 (mirip Avery 5160)</option>
+          <option value="a4-2x5">A4 2×5 (label besar)</option>
+        </select>
       </div>
 
       <div class="btn-row" style="margin-top:10px">
         <button id="zipBtn" class="btn" disabled>📦 Download semua (ZIP)</button>
-        <button id="printBtn" class="btn" disabled>🖨️ Cetak lembar (A4)</button>
+        <button id="printBtn" class="btn" disabled>🖨️ Cetak lembar</button>
       </div>
       <div id="progress" class="muted small" style="margin-top:8px"></div>
     </div>
@@ -48,12 +69,24 @@
     const grid = document.getElementById('grid');
     const fmtSel = document.getElementById('fmt');
     const sizeSel = document.getElementById('size');
+    const brandInput = document.getElementById('brand');
+    const brandSizeSel = document.getElementById('brandSize');
+    const logoInput = document.getElementById('logo');
+    const templateSel = document.getElementById('template');
     const zipBtn = document.getElementById('zipBtn');
     const printBtn = document.getElementById('printBtn');
     const progress = document.getElementById('progress');
 
-    let records = []; // {id, token}
-    let canvases = []; // {id, canvas}
+    let records = [];    // {id, token}
+    let canvases = [];   // {id, canvas} hasil jadi (QR + footer)
+    let logoImg = null;  // HTMLImageElement, kalau ada
+
+    // --- util
+    const sleep = (ms)=>new Promise(r=>setTimeout(r,ms));
+    const loadImage = (file)=> new Promise((res,rej)=>{
+      const img = new Image(); img.onload=()=>res(img); img.onerror=rej;
+      img.src = URL.createObjectURL(file);
+    });
 
     function cardTemplate(id, dataUrl){
       const wrap = document.createElement('div');
@@ -75,25 +108,85 @@
       canvases = [];
       grid.innerHTML = "";
       progress.textContent = "";
-      const size = parseInt(sizeSel.value,10) || 640;
+      if (!records.length) return;
+
+      const qrSize = parseInt(sizeSel.value,10) || 640;
+      const footerH = parseInt(brandSizeSel.value,10) || 110;  // tinggi area branding (logo+teks)
       const fmt = fmtSel.value;
+      const mime = fmt==='jpeg' ? 'image/jpeg' : 'image/png';
+      const ext  = fmt==='jpeg' ? 'jpg' : 'png';
+
       let i = 0;
       for (const {id, token} of records) {
         i++;
         progress.textContent = `Membuat QR ${i}/${records.length}…`;
-        const canvas = document.createElement('canvas');
-        await QRCode.toCanvas(canvas, JSON.stringify({t: token}), { width: size, margin: 1 });
-        canvases.push({ id, canvas });
 
-        const dataUrl = canvas.toDataURL(fmt === 'jpeg' ? 'image/jpeg' : 'image/png', fmt==='jpeg'?0.92:1);
+        // 1) generate QR pada canvas sementara
+        const qrCanvas = document.createElement('canvas');
+        await QRCode.toCanvas(qrCanvas, JSON.stringify({t: token}), { width: qrSize, margin: 1 });
+
+        // 2) buat canvas final (QR + footer branding)
+        const W = qrSize, H = qrSize + footerH;
+        const final = document.createElement('canvas'); final.width = W; final.height = H;
+        const ctx = final.getContext('2d');
+
+        // background putih untuk hasil cetak tajam
+        ctx.fillStyle = '#fff'; ctx.fillRect(0,0,W,H);
+
+        // QR di atas
+        const padTop = 0;
+        ctx.drawImage(qrCanvas, 0, padTop);
+
+        // garis pemisah tipis
+        ctx.fillStyle = '#e5e7eb';
+        ctx.fillRect(Math.round(W*0.08), qrSize, Math.round(W*0.84), 1);
+
+        // 3) footer: logo di kiri, teks di kanan (atau hanya teks kalau tanpa logo)
+        const padding = 12;
+        const areaY = qrSize + Math.round((footerH-64)/2);
+        let x = padding, y = areaY;
+
+        if (logoImg){
+          // skala logo biar proporsional
+          const targetH = Math.min(footerH-24, 64);           // tinggi maksimal logo
+          const ratio = logoImg.width / logoImg.height;
+          const logoW = Math.round(targetH * ratio);
+          const logoH = targetH;
+          // kotak putih di belakang logo (biar kontras)
+          ctx.fillStyle = '#fff';
+          ctx.fillRect(x, y - Math.round((logoH-48)/2), logoW, logoH);
+          // gambar logo
+          ctx.drawImage(logoImg, x, y - Math.round((logoH-48)/2), logoW, logoH);
+          x += logoW + 12;
+        }
+
+        // teks: ID tebal + branding kecil
+        ctx.fillStyle = '#111827';
+        ctx.font = '700 20px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial';
+        ctx.textBaseline = 'top';
+        ctx.fillText(String(id), x, y-2);
+
+        const brand = brandInput.value?.trim();
+        if (brand){
+          ctx.fillStyle = '#374151';
+          ctx.font = '500 16px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial';
+          ctx.fillText(brand, x, y+22);
+        }
+
+        // simpan
+        canvases.push({ id, canvas: final });
+
+        const dataUrl = final.toDataURL(mime, fmt==='jpeg'?0.92:1);
         grid.appendChild(cardTemplate(id, dataUrl));
-        await new Promise(r=>setTimeout(r,0)); // beri napas UI
+        await sleep(0); // beri napas UI
       }
-      progress.textContent = `Selesai membuat ${records.length} gambar.`;
+
+      progress.textContent = `Selesai membuat ${records.length} label.`;
       zipBtn.disabled = records.length===0;
       printBtn.disabled = records.length===0;
     }
 
+    // --- events
     fileInput.addEventListener('change', async (e)=>{
       grid.innerHTML = ""; canvases=[]; records=[];
       zipBtn.disabled = true; printBtn.disabled = true; progress.textContent = "";
@@ -112,9 +205,23 @@
       }
     });
 
-    fmtSel.addEventListener('change', buildCanvases);
-    sizeSel.addEventListener('change', buildCanvases);
+    // muat logo saat dipilih
+    logoInput.addEventListener('change', async (e)=>{
+      logoImg = null;
+      const f = e.target.files?.[0];
+      if (f){
+        try{ logoImg = await loadImage(f); }catch{}
+      }
+      if (records.length) await buildCanvases();
+    });
 
+    // rebuild saat pengaturan berubah
+    [fmtSel, sizeSel, brandInput, brandSizeSel].forEach(el=>{
+      el.addEventListener('change', ()=> buildCanvases());
+      el.addEventListener('keyup',  ()=> buildCanvases());
+    });
+
+    // ZIP semua
     zipBtn.addEventListener('click', async ()=>{
       if (!canvases.length) return;
       zipBtn.disabled = true;
@@ -129,7 +236,7 @@
         const dataUrl = canvas.toDataURL(mime, fmt==='jpeg'?0.92:1);
         const base64 = dataUrl.split(',')[1];
         zip.file(`${id}.${ext}`, base64, {base64:true});
-        await new Promise(r=>setTimeout(r,0));
+        await sleep(0);
       }
       const blob = await zip.generateAsync({type:'blob'});
       saveAs(blob, `qr-tokens-${Date.now()}.zip`);
@@ -137,20 +244,31 @@
       zipBtn.disabled = false;
     });
 
-    // Cetak grid dalam tata letak A4 (CSS print bawaan browser)
-    printBtn.addEventListener('click', ()=>{
-      // untuk hasil tajam, gunakan <img> yang sudah ada
-      window.print();
-    });
+    // cetak—atur template grid
+    function applyTemplate(){
+      const t = templateSel.value;
+      if (t==='a4-3x8'){
+        grid.style.gridTemplateColumns = 'repeat(3, 1fr)';
+      } else if (t==='a4-2x5'){
+        grid.style.gridTemplateColumns = 'repeat(2, 1fr)';
+      } else {
+        grid.style.gridTemplateColumns = 'repeat(auto-fill,minmax(220px,1fr))';
+      }
+    }
+    templateSel.addEventListener('change', applyTemplate);
+    applyTemplate();
+
+    printBtn.addEventListener('click', ()=> window.print());
   </script>
 
   <style>
-    /* Tata letak cetak sederhana: 3 kolom x 4 baris A4, margin kecil */
+    /* Template cetak */
     @media print {
       body{background:white}
       .container{max-width:none;margin:0;padding:0}
       .header,.btn-row,.control-grid,#progress{display:none!important}
-      #grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:8px}
+      /* default: gunakan kolom sesuai pilihan di UI */
+      #grid{gap:8px;margin:8px}
       .card{page-break-inside:avoid;border:1px solid #ccc;background:white}
       .card img{width:100%}
       .card p{color:#111}
