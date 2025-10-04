@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Log Scan</title>
+  <link rel="stylesheet" href="./style.css">
+  <style>
+    .wrap{max-width:1100px;margin:24px auto;padding:0 12px}
+    .controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:10px 0}
+    input,button,select{padding:8px 10px;border-radius:10px;border:1px solid #233046;background:#0e1420;color:#e7ebf3}
+    button{cursor:pointer}
+    table{width:100%;border-collapse:collapse;background:#10151f;color:#e7ebf3;border:1px solid #1f2734;border-radius:12px;overflow:hidden}
+    th,td{padding:10px;border-bottom:1px solid #1f2734;font-size:14px;text-align:left;vertical-align:top}
+    th{position:sticky;top:0;background:#0e1420;z-index:1}
+    .muted{color:#9aa3b2}
+    .badge{padding:4px 8px;border-radius:999px;font-size:12px;border:1px solid #2a354a;white-space:nowrap}
+    .ok{background:#0f1a13;color:#bdf3c4;border-color:#1f2d22}
+    .warn{background:#2a1c0e;color:#fde6aa;border-color:#3a2a12}
+    .error{margin:12px 0;padding:12px;border-radius:12px;background:#1a1212;color:#fecaca;border:1px solid #3b2d2d}
+    .empty{margin:12px 0;padding:12px;border-radius:12px;background:#101a12;color:#bff0c5;border:1px solid #24422d}
+    .loading{display:inline-flex;gap:8px;align-items:center}
+    .dot{width:8px;height:8px;border-radius:50%;background:#a5b4fc;animation:b 1s infinite alternate}
+    .dot:nth-child(2){animation-delay:.15s}.dot:nth-child(3){animation-delay:.3s}
+    @keyframes b{to{transform:translateY(-3px);opacity:.6}}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h2>Log Scan</h2>
+
+    <div class="controls">
+      <input type="password" id="adminKey" placeholder="x-admin-key" />
+      <input type="number" id="limit" value="100" min="1" max="1000" />
+      <label class="muted" style="display:flex;align-items:center;gap:6px">
+        <input type="checkbox" id="auto" /> Auto refresh (10s)
+      </label>
+      <button id="loadBtn">Load</button>
+      <button id="nextBtn" disabled>Next Page</button>
+      <button id="csvBtn" disabled>Export CSV</button>
+      <span id="status" class="muted"></span>
+    </div>
+
+    <div id="msg"></div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Waktu</th>
+          <th>Order ID</th>
+          <th>Status</th>
+          <th>Nama</th>
+          <th>Jumlah</th>
+          <th>Ukuran</th>
+          <th>Telepon</th>
+          <th>Alamat</th>
+          <th>Operator</th>
+          <th>IP</th>
+          <th>User-Agent</th>
+        </tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+
+  <script>
+    // GANTI jika URL worker berbeda
+    const API_URL = "https://po-scan-worker.rizal-scan.workers.dev/admin/logs";
+
+    const tbody   = document.getElementById('tbody');
+    const adminKey= document.getElementById('adminKey');
+    const loadBtn = document.getElementById('loadBtn');
+    const nextBtn = document.getElementById('nextBtn');
+    const csvBtn  = document.getElementById('csvBtn');
+    const limitEl = document.getElementById('limit');
+    const autoEl  = document.getElementById('auto');
+    const msgEl   = document.getElementById('msg');
+    const statusEl= document.getElementById('status');
+
+    let cursor = null;
+    let rowsAccum = [];
+    let autoTimer = null; // ← deklarasi cukup sekali di sini
+
+    function fmtTime(iso){ try { return new Date(iso).toLocaleString(); } catch { return iso || "-"; } }
+    function esc(s){ return String(s??"").replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m])) }
+    function showLoading(on){ statusEl.innerHTML = on ? `<span class="loading"><span class="dot"></span><span class="dot"></span><span class="dot"></span> loading…</span>` : ""; }
+    function showError(text){ msgEl.innerHTML = `<div class="error">❌ ${esc(text)}</div>`; }
+    function showEmpty(text){ msgEl.innerHTML = `<div class="empty">ℹ️ ${esc(text)}</div>`; }
+    function clearMsg(){ msgEl.innerHTML = ""; }
+
+    async function fetchLogs(first=false){
+      if (!adminKey.value) { showError("Isi x-admin-key dulu"); return { ok:false }; }
+      try{
+        showLoading(true);
+        const url = new URL(API_URL);
+        url.searchParams.set("limit", String(limitEl.value||100));
+        if (!first && cursor) url.searchParams.set("cursor", cursor);
+
+        const res = await fetch(url, { headers: { "x-admin-key": adminKey.value } });
+        const data = await res.json().catch(()=> ({}));
+        showLoading(false);
+
+        if (!res.ok || !data.ok){
+          if (data.error === "FORBIDDEN") showError("Admin key salah.");
+          else if (data.error === "ADMIN_DISABLED") showError("Admin endpoint dimatikan (ADMIN_KEY tidak diset).");
+          else showError("Gagal memuat logs.");
+          return { ok:false };
+        }
+
+        if (first) { tbody.innerHTML = ""; rowsAccum = []; } else { clearMsg(); }
+
+        const rows = data.rows || [];
+        if (first && rows.length === 0){ showEmpty("Belum ada log. Coba scan satu QR dulu."); }
+
+        for (const r of rows) {
+          const o = r.order || {};
+          const tr = document.createElement("tr");
+          tr.innerHTML = `
+            <td>${esc(fmtTime(r.at))}</td>
+            <td>${esc(r.id)}</td>
+            <td>${r.status === "PICKED_OK"
+                  ? '<span class="badge ok">PICKED_OK</span>'
+                  : '<span class="badge warn">ALREADY_PICKED</span>'}</td>
+            <td>${esc(o.nama ?? '-')}</td>
+            <td>${esc(o.jumlah ?? '-')}</td>
+            <td>${esc(o.ukuran ?? '-')}</td>
+            <td>${esc(o.telepon ?? '-')}</td>
+            <td>${esc(o.alamat ?? '-')}</td>
+            <td>${esc(r.operator||'-')}</td>
+            <td>${esc(r.ip||'-')}</td>
+            <td title="${esc(r.ua||'')}">${esc((r.ua||'').slice(0,70))}${(r.ua||'').length>70?'…':''}</td>
+          `;
+          tbody.appendChild(tr);
+        }
+
+        rowsAccum = first ? rows : rowsAccum.concat(rows);
+        cursor = data.nextCursor;
+        nextBtn.disabled = !cursor;
+        csvBtn.disabled  = rowsAccum.length === 0;
+        return { ok:true };
+      }catch{
+        showLoading(false);
+        showError("Network error saat memuat logs.");
+        return { ok:false };
+      }
+    }
+
+    async function loadFirst(){ cursor = null; await fetchLogs(true); }
+    async function loadNext(){ if (!cursor) return; await fetchLogs(false); }
+
+    function toCSV(rows){
+      const head = ["at","id","status","nama","jumlah","ukuran","telepon","alamat","operator","ip","ua"];
+      const escCSV = (v)=> `"${String(v??"").replace(/"/g,'""')}"`;
+      const lines = [head.join(",")];
+      for (const r of rows){
+        const o = r.order || {};
+        lines.push([
+          r.at, r.id, r.status,
+          o.nama ?? "", o.jumlah ?? "", o.ukuran ?? "", o.telepon ?? "", o.alamat ?? "",
+          r.operator ?? "", r.ip ?? "", r.ua ?? ""
+        ].map(escCSV).join(","));
+      }
+      return lines.join("\r\n");
+    }
+    function downloadCSV(){
+      const csv = toCSV(rowsAccum);
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `scan-logs-${Date.now()}.csv`;
+      a.click();
+    }
+
+    // Auto refresh (pakai autoTimer yang sudah dideklarasikan di atas)
+    function setAuto(on){
+      if (autoTimer){ clearInterval(autoTimer); autoTimer = null; }
+      if (on){ autoTimer = setInterval(loadFirst, 10000); }
+    }
+
+    loadBtn.addEventListener('click', loadFirst);
+    nextBtn.addEventListener('click', loadNext);
+    csvBtn.addEventListener('click', downloadCSV);
+    autoEl.addEventListener('change', (e)=> setAuto(e.target.checked));
+  </script>
+</body>
+</html>
